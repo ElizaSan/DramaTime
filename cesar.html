@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Acertijo: Palabra oculta en el HTML (Cifrado César)</title>
+  <style>
+    :root { --bg: #0f172a; --card:#111827; --ink:#e5e7eb; --muted:#9ca3af; --accent:#22c55e; }
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji"}
+    .wrap{max-width:860px;margin:0 auto;padding:32px}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .pad{padding:24px}
+    h1{font-size:clamp(1.25rem,1rem+2vw,2rem);margin:.2rem 0 1rem}
+    p{line-height:1.55}
+    .muted{color:var(--muted)}
+    .grid{display:grid;gap:16px}
+    .controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    input[type="number"],input[type="text"]{background:#0b1220;border:1px solid #263043;border-radius:10px;color:var(--ink);padding:.6rem .8rem;outline:0}
+    button{background:#1f2937;border:1px solid #374151;color:var(--ink);padding:.6rem .9rem;border-radius:12px;font-weight:600;cursor:pointer}
+    button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    button.primary{background:#0b5; border-color:#0a4}
+    .ok{color:var(--accent);font-weight:700}
+    .out{white-space:pre-wrap;background:#0b1220;border:1px dashed #334155;border-radius:12px;padding:16px}
+    details{background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:12px}
+    code{background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:2px 6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card pad grid">
+      <header>
+        <h1>🔐 Acertijo de criptografía: encuentra y descifra la palabra oculta</h1>
+        <p>
+          En algún lugar del <strong>HTML</strong> se esconde un mensaje cifrado con un <em>César</em>.
+          Tu misión tiene dos pasos:
+        </p>
+        <ol>
+          <li><strong>Descubrir dónde está el mensaje</strong> (pista: los navegadores lo ignoran, pero vive en el código fuente).</li>
+          <li><strong>Ingresar la clave</strong> (el número de desplazamientos) y luego <strong>descifrar</strong>.</li>
+        </ol>
+        <p class="muted">Pista para la clave: cuenta las letras de <code>html</code>.</p>
+      </header>
+
+      <section aria-labelledby="controles">
+        <h2 id="controles" class="muted" style="font-size:1rem;margin:0 0 .5rem;">Controles</h2>
+        <div class="controls">
+          <label for="key" class="muted">Clave (desplazamiento César)</label>
+          <input id="key" name="key" type="number" inputmode="numeric" min="0" max="25" placeholder="0–25" aria-label="Clave de desplazamiento" />
+          <button id="btnClave" type="button" aria-describedby="ayudaClave">Ingresar clave</button>
+          <button id="btnDescifrar" class="primary" type="button">Descifrar mensaje</button>
+        </div>
+        <p id="ayudaClave" class="muted" style="margin:.25rem 0 0">Puedes probar con diferentes números si no estás seguro.</p>
+      </section>
+
+      <section aria-labelledby="resultado">
+        <h2 id="resultado" class="muted" style="font-size:1rem;margin:1rem 0 .5rem;">Resultado</h2>
+        <div id="status" role="status" aria-live="polite" class="muted"></div>
+        <div id="salida" class="out" aria-label="Texto descifrado">(Aún no hay resultado)</div>
+      </section>
+
+      <details>
+        <summary>¿Cómo funciona el cifrado César?</summary>
+        <p>Es un cifrado por sustitución: cada letra se desplaza <em>k</em> posiciones en el alfabeto. Por ejemplo, con <em>k=3</em>, <code>A→D</code>, <code>B→E</code>, …, <code>Z→C</code>. Para <strong>descifrar</strong>, se desplaza en sentido contrario.</p>
+      </details>
+
+      <!-- MENSAJE_CIFRADO: PE TEPEFVE SGYPXE IW KMVEWSP -->
+      <!-- 
+        Sugerencia: abre las Herramientas de Desarrollador o usa “Ver código fuente” para encontrar la línea anterior.
+        Si prefieres, también lo guardamos en data-atributos aquí abajo para que puedas inspeccionarlo:
+      -->
+      <div id="pergamino" data-cipher="PE TEPEFVE SGYPXE IW KMVEWSP" hidden></div>
+
+      <footer class="muted">
+        <p>Tip: si tu clave es incorrecta, el resultado se verá con letras sin sentido. Ajusta el número y vuelve a intentar.</p>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const keyInput = document.getElementById('key');
+      const btnClave = document.getElementById('btnClave');
+      const btnDescifrar = document.getElementById('btnDescifrar');
+      const salida = document.getElementById('salida');
+      const status = document.getElementById('status');
+
+      // 1) Recupera el texto cifrado buscando primero en comentarios del documento (divertido 🕵️)
+      function getCipherFromComments(){
+        const walker = document.createTreeWalker(document, NodeFilter.SHOW_COMMENT, null);
+        let node; 
+        while((node = walker.nextNode())){
+          const m = /MENSAJE_CIFRADO:\s*(.*)$/i.exec(node.nodeValue.trim());
+          if(m) return m[1].trim();
+        }
+        // respaldo: usa data-atributo si no se encontró
+        const el = document.getElementById('pergamino');
+        return el?.dataset?.cipher || '';
+      }
+
+      // 2) Descifrar César con desplazamiento k (0–25)
+      function caesarDecode(text, k){
+        const A = 'A'.charCodeAt(0), Z = 'Z'.charCodeAt(0);
+        const a = 'a'.charCodeAt(0), z = 'z'.charCodeAt(0);
+        k = ((k % 26) + 26) % 26; // normaliza
+        let out = '';
+        for(const ch of text){
+          const code = ch.charCodeAt(0);
+          if(code >= A && code <= Z){
+            out += String.fromCharCode(((code - A - k + 26) % 26) + A);
+          } else if(code >= a && code <= z){
+            out += String.fromCharCode(((code - a - k + 26) % 26) + a);
+          } else {
+            out += ch; // espacios, signos, números…
+          }
+        }
+        return out;
+      }
+
+      let clave = null;
+
+      btnClave.addEventListener('click', () => {
+        const v = Number(keyInput.value);
+        if(Number.isFinite(v) && v >= 0 && v <= 25){
+          clave = v;
+          status.innerHTML = `Clave establecida: <span class="ok">${clave}</span>`;
+        } else {
+          clave = null;
+          status.textContent = 'Ingresa un número entre 0 y 25.';
+        }
+      });
+
+      btnDescifrar.addEventListener('click', () => {
+        const cipher = getCipherFromComments();
+        const k = (clave ?? Number(keyInput.value));
+        if(!Number.isFinite(k)){
+          status.textContent = 'Primero ingresa la clave (0–25).';
+          keyInput.focus();
+          return;
+        }
+        const plain = caesarDecode(cipher, k);
+        salida.textContent = plain || '(No se encontró ningún mensaje)';
+        if(k === 4){
+          status.innerHTML = `✅ Clave correcta. Mensaje descifrado con César(k=${k}).`;
+        } else {
+          status.innerHTML = `⚠️ Mensaje descifrado con k=${k}. Si no tiene sentido, ajusta la clave.`;
+        }
+      });
+
+      // Accesibilidad: Enter en el input arma la clave
+      keyInput.addEventListener('keydown', (ev)=>{
+        if(ev.key === 'Enter') btnClave.click();
+      });
+
+    })();
+  </script>
+</body>
+</html>
